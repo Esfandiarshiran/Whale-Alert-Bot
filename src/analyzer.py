@@ -125,7 +125,7 @@ def run_whale_scan() -> List[Tuple]:
                     'score': score_data['score'],
                     'score_breakdown': score_data['breakdown'],
                     'tx_id': tx['txid'],
-                    'tx_short': tx['txid'][:16] + '...',
+                    'tx_short': tx['txid'][:16],
                     'timestamp': ts,
                     'cluster': cluster,
                     'is_first_seen': is_new,
