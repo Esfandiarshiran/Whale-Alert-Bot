@@ -1,66 +1,31 @@
-name: Whale Scan (Heavy - Every 10-30 min)
-
+name: Whale Scan
 on:
   schedule:
-    # ساعات اوج (UTC 06:00-22:00): هر ۱۰ دقیقه
     - cron: '*/10 6-21 * * *'
-    # ساعات غیراوج (UTC 22:00-06:00): هر ۳۰ دقیقه
     - cron: '*/30 22-23,0-5 * * *'
-  workflow_dispatch:  # اجرای دستی برای تست
-
-# جلوگیری از تداخل همزمان
-concurrency:
-  group: whale-scan
-  cancel-in-progress: false
-
+  workflow_dispatch:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # افزایش به ۱۰ دقیقه برای مواقع شلوغ
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Restore cache
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt
+      - uses: actions/cache@v4
         with:
           path: cache
           key: whale-cache-v1
-          restore-keys: |
-            whale-cache-v1
-
-      - name: Run whale scan + send alerts
+      - name: Run scan
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPER_ADMIN_IDS: ${{ secrets.SUPER_ADMIN_IDS }}
-        run: |
-          python -m src.main 2>&1 | tee main_logs.txt || true
-
-      - name: Upload scan logs (if failed)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scan-logs
-          path: main_logs.txt
-
-      - name: Save cache
+        run: python -m src.main
+      - uses: actions/cache/save@v4
         if: always()
-        uses: actions/cache/save@v4
         with:
           path: cache
           key: whale-cache-v1
