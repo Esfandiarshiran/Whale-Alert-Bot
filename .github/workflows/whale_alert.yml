@@ -1,0 +1,80 @@
+name: Whale Alert Bot
+
+# =====================================================================
+# SMART SCHEDULING — minimizes GitHub Actions usage
+# =====================================================================
+# Strategy: single workflow does BOTH scan + admin poll
+#   - During peak hours (UTC 06:00-22:00): every 10 min (96 runs/day)
+#   - During off-peak (UTC 22:00-06:00): every 30 min (32 runs/day)
+#   - Total: 128 runs/day ≈ 3840 runs/month for THIS bot
+#   - Each run ~30-90s = ~60 min/day = ~1800 min/month
+#   - Public repos: unlimited minutes, so this is fine.
+#
+# Concurrency: prevents two runs from overlapping (which would cause
+# duplicate alert sends). cancel-in-progress: false ensures a run
+# that's mid-send doesn't get killed.
+# =====================================================================
+
+on:
+  schedule:
+    # Peak hours: every 10 min (06:00-21:50 UTC)
+    - cron: '*/10 6-21 * * *'
+    # Off-peak: every 30 min (22:00-05:50 UTC)
+    - cron: '*/30 22-23,0-5 * * *'
+  workflow_dispatch:  # allow manual trigger (use this for testing!)
+
+concurrency:
+  group: whale-bot-run
+  cancel-in-progress: false
+
+jobs:
+  run_bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore dedup cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: whale-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            whale-cache-${{ runner.os }}-
+
+      - name: Run admin poll (process /addchannel, /test, /spot commands)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPER_ADMIN_IDS: ${{ secrets.SUPER_ADMIN_IDS }}
+        run: |
+          python -m src.admin_bot 2>&1 | tee admin_logs.txt || true
+
+      - name: Run whale scan + send alerts
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPER_ADMIN_IDS: ${{ secrets.SUPER_ADMIN_IDS }}
+        run: |
+          python -m src.main 2>&1 | tee main_logs.txt
+
+      - name: Save dedup cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: whale-cache-${{ runner.os }}-${{ github.sha }}
