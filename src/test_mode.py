@@ -215,7 +215,7 @@ def main():
                 if clean_txid.startswith(prefix):
                     clean_txid = clean_txid[len(prefix):]
                     break
-            txid_short = clean_txid[:16] if clean_txid else None
+            txid_short = clean_txid[:16] + '...' if clean_txid else None
 
         # Store alert metadata for personalization
         if txid_short:

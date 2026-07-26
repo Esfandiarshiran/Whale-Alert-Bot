@@ -383,14 +383,28 @@ def _handle_start(chat_id: str, user_id: str, username: str) -> None:
 
 
 def _handle_spot_request(chat_id: str, user_id: str, txid_short: str) -> None:
-    log.info(f"SPOT REQUEST STARTED: user={user_id}, txid={txid_short}")
-    """User tapped 'Personalize & Share' on an alert.
-    Look up the alert metadata and ask for their username."""
+    """User tapped 'Personalize & Share' on an alert."""
+    # Always send ack
+    send_admin_reply(
+        chat_id,
+        "✅ Your request has been received!\n"
+        "⏳ Please wait up to 2 minutes while we generate your card.\n\n"
+        "💡 You'll be asked for your name in the next step."
+    )
+
     if not txid_short:
-        send_admin_reply(chat_id,
-            "❌  Invalid alert link.\n\n"
-            "Tap 'Personalize & Share' button on a whale alert to get your personalized card.")
         return
+
+    meta = get_alert_meta(txid_short)
+    if not meta:
+        send_admin_reply(
+            chat_id,
+            "❌ This alert is no longer available for personalization.\n\n"
+            "🎯 Please tap 'Personalize & Share' on a newer alert."
+        )
+        return
+
+    set_pending_personalization(user_id, txid_short)
 
     # Look up alert metadata
     meta = get_alert_meta(txid_short)
