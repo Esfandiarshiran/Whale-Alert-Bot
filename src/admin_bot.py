@@ -1,22 +1,11 @@
 """
 Admin command processor.
 Polls Telegram getUpdates and processes commands.
-
-Handles:
-- /start [spot_TXID] — welcome OR personalization deep link
-- /help, /status, /stats — info commands
-- /addchannel, /removechannel, /listchannels — admin channel management
-- /addadmin, /removeadmin, /listadmins — admin user management
-- /test [btc|eth|tron] — generate sample alert
-- Free text messages — if user has pending personalization, treat as username
-
-CRITICAL: Only super-admins (env) and admins (Supabase) can run privileged commands.
-The /start spot_TXID flow is OPEN TO EVERYONE (that's the viral mechanic).
-Security: never trust user input - validate all arguments.
 """
 import sys
 import time
 import json
+import logging
 from .telegram import (
     get_updates, send_admin_reply, build_share_buttons,
     build_personalized_card_buttons, build_twitter_intent_url,
@@ -33,14 +22,11 @@ from .supabase import (
 from .config import SUPER_ADMIN_IDS, FOOTER_TEXT, FOOTER_MAIN_BOT, FOOTER_MAIN_CHANNEL, log
 from .formatter import format_help_message, format_status_message
 
-
-# Commands that require admin
 ADMIN_COMMANDS = {'/addchannel', '/removechannel', '/listchannels',
                   '/addadmin', '/removeadmin', '/listadmins', '/test'}
 
 
 def handle_command(update: dict) -> None:
-    """Process a single Telegram update (message)."""
     try:
         message = update.get('message') or {}
         if not message:
@@ -58,34 +44,28 @@ def handle_command(update: dict) -> None:
         user_id = str(user.get('id', ''))
         username = user.get('username', '') or user.get('first_name', '')
 
-        # === Check if user has a pending personalization ===
-        # If so, treat their message as the username for the card
         pending = get_pending_personalization(user_id)
         if pending and not text.startswith('/'):
             _handle_personalization_response(chat_id, user_id, text, pending)
             return
 
-        # Parse command + args
         parts = text.split()
         if not parts:
             return
-        cmd = parts[0].lower().split('@')[0]  # strip bot mention
+        cmd = parts[0].lower().split('@')[0]
         args = parts[1:]
 
-        log.info(f"Command from {user_id} ({username}): {cmd} {args[:2]}")  # don't log full args (privacy)
+        log.info(f"Command from {user_id} ({username}): {cmd} {args[:2]}")
 
-        # === /start with deep link (personalization flow) ===
         if cmd == '/start':
             if args and args[0].startswith('spot_'):
-                # Deep link: /start spot_TXIDSHORT
-                txid_short = args[0][5:]  # remove "spot_" prefix
+                txid_short = args[0][5:]
                 _handle_spot_request(chat_id, user_id, txid_short)
                 return
             elif args and args[0] == 'help':
                 send_admin_reply(chat_id, format_help_message(is_admin=is_admin(user_id)))
                 return
             else:
-                # Plain /start
                 _handle_start(chat_id, user_id, username)
                 return
 
@@ -94,7 +74,6 @@ def handle_command(update: dict) -> None:
             return
 
         if cmd == '/spot' and args:
-            # Direct /spot command: /spot TXIDSHORT
             _handle_spot_request(chat_id, user_id, args[0])
             return
 
@@ -120,11 +99,9 @@ def handle_command(update: dict) -> None:
             send_admin_reply(chat_id, today_msg)
             return
 
-        # Admin-only commands
         if cmd in ADMIN_COMMANDS:
             if not is_admin(user_id):
-                send_admin_reply(chat_id, "⛔  Access denied. You are not an admin.")
-                log.warning(f"Non-admin {user_id} tried {cmd}")
+                send_admin_reply(chat_id, "⛔ Access denied. You are not an admin.")
                 return
 
             if cmd == '/addchannel':
@@ -143,22 +120,74 @@ def handle_command(update: dict) -> None:
                 _cmd_test(chat_id, args)
             return
 
-        # Unknown command
         send_admin_reply(chat_id, f"Unknown command: {cmd}\n\nUse /help to see available commands.")
 
     except Exception as e:
         log.exception(f"Command handling error: {e}")
-        try:
-            send_admin_reply(chat_id, "⚠️  Internal error processing command.")
-        except Exception:
-            pass
 
 
 # =====================================================================
-# ADMIN COMMAND HANDLERS
+# SPOT REQUEST - FIXED
+# =====================================================================
+def _handle_spot_request(chat_id: str, user_id: str, txid_short: str) -> None:
+    """User tapped 'Personalize & Share' on an alert."""
+    log.info(f"SPOT REQUEST: user={user_id}, txid={txid_short}")
+
+    # === ALWAYS send an immediate acknowledgment ===
+    ack_sent = send_admin_reply(
+        chat_id,
+        "✅ Your request has been received!\n"
+        "⏳ Please wait up to 2 minutes while we generate your card.\n\n"
+        "💡 You'll be asked for your username in the next step."
+    )
+    log.info(f"SPOT REQUEST: ack sent = {ack_sent}")
+
+    if not txid_short:
+        return
+
+    # === Look up metadata ===
+    meta = get_alert_meta(txid_short)
+    log.info(f"SPOT REQUEST: meta found = {meta is not None}")
+
+    if not meta:
+        send_admin_reply(
+            chat_id,
+            "❌ This alert is no longer available for personalization.\n\n"
+            "🎯 Please tap 'Personalize & Share' on a newer alert.\n\n"
+            "💡 Only alerts posted AFTER the bot was activated can be personalized."
+        )
+        return
+
+    # === Store pending and ask for username ===
+    set_pending_personalization(user_id, txid_short)
+
+    value_usd = meta.get('value_usd', 0)
+    asset = meta.get('asset', '?')
+    if value_usd >= 1_000_000:
+        val_str = f"${value_usd/1_000_000:.1f}M"
+    else:
+        val_str = f"${value_usd:,.0f}"
+
+    msg = (
+        f"🎨  PERSONALIZE YOUR WHALE CARD\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Alert: {val_str} {asset}\n\n"
+        f"I'll create a beautiful personalized version of this card with YOUR name on it.\n\n"
+        f"👤  What name or @username should I put on the card?\n\n"
+        f"  • Send your Telegram @username (e.g. @satoshi)\n"
+        f"  • Or any name/nickname you want\n"
+        f"  • Max 20 characters\n\n"
+        f"The card will say: '👁 SPOTTED BY @yourname'\n\n"
+        f"Then you can share it on Twitter, Telegram, anywhere — it's YOUR card."
+    )
+
+    send_admin_reply(chat_id, msg)
+
+
+# =====================================================================
+# ADMIN COMMAND HANDLERS (unchanged)
 # =====================================================================
 def _cmd_add_channel(chat_id: str, args: list, added_by: str) -> None:
-    """Usage: /addchannel @username  OR  /addchannel -1001234567890 [title]"""
     if not args:
         send_admin_reply(chat_id,
             "Usage:\n"
@@ -166,15 +195,11 @@ def _cmd_add_channel(chat_id: str, args: list, added_by: str) -> None:
             "  /addchannel -1001234567890 [title]\n\n"
             "Make sure the bot is added as ADMIN to the channel first.")
         return
-
     channel = args[0]
     title = ' '.join(args[1:]) if len(args) > 1 else ''
-
-    # Validate
     if not (channel.startswith('@') or channel.startswith('-100')):
         send_admin_reply(chat_id, "Channel must start with @ or -100 (numeric ID).")
         return
-
     result = add_channel(
         channel_id=channel if channel.startswith('-100') else '',
         username=channel if channel.startswith('@') else '',
@@ -185,8 +210,7 @@ def _cmd_add_channel(chat_id: str, args: list, added_by: str) -> None:
         send_admin_reply(chat_id,
             f"✅  Channel added: {channel}\n"
             f"Total channels: {get_channel_count()}\n\n"
-            f"⚠️  Make sure the bot is ADMIN in that channel, otherwise sends will fail.\n"
-            f"After 5 consecutive failures, the channel is auto-disabled.")
+            f"⚠️  Make sure the bot is ADMIN in that channel, otherwise sends will fail.")
     else:
         send_admin_reply(chat_id, f"❌  Failed: {result.get('error', 'unknown error')}")
 
@@ -272,23 +296,18 @@ def _cmd_list_admins(chat_id: str) -> None:
     send_admin_reply(chat_id, msg)
 
 
-# =====================================================================
-# TEST MODE COMMAND
-# =====================================================================
 def _cmd_test(chat_id: str, args: list) -> None:
-    """Generate sample alert(s) using REAL latest transactions and post to all channels.
-    Usage: /test [btc|eth|tron|all]"""
+    """Generate sample alert(s) using REAL latest transactions."""
     source = args[0].lower() if args else 'all'
     if source not in ('btc', 'eth', 'tron', 'all'):
         send_admin_reply(chat_id, "Usage: /test [btc|eth|tron|all]")
         return
-
-    send_admin_reply(chat_id, f"🧪 Generating TEST alert(s) from source: {source}\nThis takes ~30 seconds (fetching real latest txs)...")
-
+    send_admin_reply(chat_id, f"🧪 Generating TEST alert(s) from source: {source}\nThis takes ~30 seconds...")
     try:
         from .test_mode import build_test_alert_btc, build_test_alert_eth, build_test_alert_tron
         from .formatter import format_alert
         from .card_generator import generate_alert_card
+        from .telegram import send_to_all_channels
 
         alerts = []
         if source in ('btc', 'all'):
@@ -305,18 +324,15 @@ def _cmd_test(chat_id: str, args: list) -> None:
                 alerts.append(a)
 
         if not alerts:
-            send_admin_reply(chat_id, "❌  Could not generate test alerts (network issues or no recent txs).")
+            send_admin_reply(chat_id, "❌ Could not generate test alerts (network issues or no recent txs).")
             return
 
-        from .telegram import send_to_all_channels, build_share_buttons
         from .test_mode import TEST_MARKER
-
         sent_count = 0
         for alert in alerts:
             message = format_alert(alert)
             message = f"{TEST_MARKER}\n\n" + message
             photo_path = generate_alert_card(alert)
-            # Get txid_short for personalization button
             full_txid = alert.get('tx_id', '')
             txid_short = None
             if full_txid:
@@ -325,15 +341,13 @@ def _cmd_test(chat_id: str, args: list) -> None:
                     if clean_txid.startswith(prefix):
                         clean_txid = clean_txid[len(prefix):]
                         break
-                txid_short = clean_txid[:16] if clean_txid else None
-            # Store meta for personalization
+                txid_short = clean_txid[:16] + '...' if clean_txid else None
             if txid_short:
                 try:
                     from .cache import store_alert_meta
                     store_alert_meta(txid_short, alert)
                 except Exception:
                     pass
-            # Generate mood for vote buttons
             mood = 'neutral'
             try:
                 from .virality import generate_insight
@@ -354,11 +368,7 @@ def _cmd_test(chat_id: str, args: list) -> None:
         send_admin_reply(chat_id, f"❌  Test mode error: {e}")
 
 
-# =====================================================================
-# PERSONALIZATION FLOW — the viral mechanic
-# =====================================================================
 def _handle_start(chat_id: str, user_id: str, username: str) -> None:
-    """Handle plain /start — welcome message + show what the bot does."""
     is_adm = is_admin(user_id)
     msg = (
         "🐋  Welcome to OnchainPulse Whale Alert Bot!\n"
@@ -382,77 +392,14 @@ def _handle_start(chat_id: str, user_id: str, username: str) -> None:
     send_admin_reply(chat_id, msg)
 
 
-def _handle_spot_request(chat_id: str, user_id: str, txid_short: str) -> None:
-    """User tapped 'Personalize & Share' on an alert."""
-    # Always send ack
-    send_admin_reply(
-        chat_id,
-        "✅ Your request has been received!\n"
-        "⏳ Please wait up to 2 minutes while we generate your card.\n\n"
-        "💡 You'll be asked for your name in the next step."
-    )
-
-    if not txid_short:
-        return
-
-    meta = get_alert_meta(txid_short)
-    if not meta:
-        send_admin_reply(
-            chat_id,
-            "❌ This alert is no longer available for personalization.\n\n"
-            "🎯 Please tap 'Personalize & Share' on a newer alert."
-        )
-        return
-
-    set_pending_personalization(user_id, txid_short)
-
-    # Look up alert metadata
-    meta = get_alert_meta(txid_short)
-    if not meta:
-        send_admin_reply(chat_id,
-            f"❌  This alert is no longer available for personalization.\n\n"
-            f"We keep the last 500 alerts for personalization. This one has expired.\n\n"
-            f"🎯  Watch for new alerts in the channel and tap 'Personalize & Share' quickly!\n\n"
-            f"📡 Daily charts: @OnchainPulse3\n"
-            f"🛠 40+ crypto tools — try free: @Onchainpulse1_bot")
-        return
-
-    # Store pending personalization
-    set_pending_personalization(user_id, txid_short)
-
-    # Ask for username
-    value_usd = meta.get('value_usd', 0)
-    asset = meta.get('asset', '?')
-    if value_usd >= 1_000_000:
-        val_str = f"${value_usd/1_000_000:.1f}M"
-    else:
-        val_str = f"${value_usd:,.0f}"
-
-    send_admin_reply(chat_id,
-        f"🎨  PERSONALIZE YOUR WHALE CARD\n"
-        f"━" * 30 + f"\n\n"
-        f"Alert: {val_str} {asset}\n\n"
-        f"I'll create a beautiful personalized version of this card with YOUR name on it.\n\n"
-        f"👤  What name or @username should I put on the card?\n\n"
-        f"  • Send your Telegram @username (e.g. @satoshi)\n"
-        f"  • Or any name/nickname you want\n"
-        f"  • Max 20 characters\n\n"
-        f"The card will say: '👁 SPOTTED BY @yourname'\n\n"
-        f"Then you can share it on Twitter, Telegram, anywhere — it's YOUR card.")
-
-
 def _handle_personalization_response(chat_id: str, user_id: str,
                                        username_text: str, pending: dict) -> None:
-    """User sent their username after /spot request. Generate personalized card."""
     try:
-        # Sanitize username
         username = username_text.strip().lstrip('@').replace('\n', ' ').replace('\r', '')[:20]
-        # Remove any non-printable chars
         username = ''.join(c for c in username if c.isprintable() and c not in '<>&"\'\\')
-
         if not username or len(username) < 2:
             send_admin_reply(chat_id,
-                "❌  Please send a valid name (2-20 characters).\n\n"
+                "❌ Please send a valid name (2-20 characters).\n\n"
                 "Try again — send your @username or a nickname.")
             return
 
@@ -460,32 +407,26 @@ def _handle_personalization_response(chat_id: str, user_id: str,
         meta = get_alert_meta(txid_short)
         if not meta:
             send_admin_reply(chat_id,
-                "❌  This alert has expired. Please tap 'Personalize & Share' on a fresh alert.")
+                "❌ This alert has expired. Please tap 'Personalize & Share' on a fresh alert.")
             clear_pending_personalization(user_id)
             return
 
-        # Clear pending state
         clear_pending_personalization(user_id)
 
-        # Send "generating" message
         send_admin_reply(chat_id,
-            f"🎨  Generating your personalized card for @{username}...\n"
+            f"🎨 Generating your personalized card for @{username}...\n"
             f"This takes ~5 seconds.")
 
-        # Generate personalized card
         from .card_generator import generate_alert_card
         from .formatter import format_alert
 
         photo_path = generate_alert_card(meta, username=username)
-
         if not photo_path:
-            # Fallback: send text only
             msg = format_alert(meta)
             send_admin_reply(chat_id,
-                f"✅  Your personalized alert (text only — image generation failed):\n\n{msg}")
+                f"✅ Your personalized alert (text only — image generation failed):\n\n{msg}")
             return
 
-        # Build the caption (shorter, with personalization note)
         value_usd = meta.get('value_usd', 0)
         asset = meta.get('asset', '?')
         if value_usd >= 1_000_000:
@@ -510,9 +451,8 @@ def _handle_personalization_response(chat_id: str, user_id: str,
             f"━" * 30 + f"\n"
             f"📡 Daily charts: @OnchainPulse3\n"
             f"🛠 40+ crypto tools — try free: @Onchainpulse1_bot"
-        )[:1024]  # Telegram caption limit
+        )[:1024]
 
-        # Build share buttons
         tweet_url = build_twitter_intent_url(meta, username=username)
         alert_text = format_alert(meta)
         buttons = build_personalized_card_buttons(
@@ -520,14 +460,13 @@ def _handle_personalization_response(chat_id: str, user_id: str,
             alert_text=alert_text,
         )
 
-        # Send photo with caption + buttons via Telegram API
         import os
         import requests
         from .config import TELEGRAM_BOT_TOKEN, TG_SEND_TIMEOUT
         import json
 
         if not TELEGRAM_BOT_TOKEN or not os.path.exists(photo_path):
-            send_admin_reply(chat_id, "❌  Could not generate card. Please try again.")
+            send_admin_reply(chat_id, "❌ Could not generate card. Please try again.")
             return
 
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -546,7 +485,7 @@ def _handle_personalization_response(chat_id: str, user_id: str,
         else:
             log.error(f"Failed to send personalized card: {resp.text[:200]}")
             send_admin_reply(chat_id,
-                "❌  Could not send the card image. Please try again with a fresh alert.")
+                "❌ Could not send the card image. Please try again with a fresh alert.")
 
     except Exception as e:
         log.exception(f"Personalization response error: {e}")
@@ -554,21 +493,16 @@ def _handle_personalization_response(chat_id: str, user_id: str,
             clear_pending_personalization(user_id)
         except Exception:
             pass
-        send_admin_reply(chat_id, f"❌  Error generating card: {e}. Please try again.")
+        send_admin_reply(chat_id, f"❌ Error generating card: {e}. Please try again.")
 
 
-# =====================================================================
-# MAIN POLLING LOOP
-# =====================================================================
 def main():
-    """Poll Telegram for admin commands. Run every 5 minutes via GitHub Actions."""
     log.info("=" * 60)
     log.info("ADMIN BOT - polling for commands")
     log.info(f"Super-admins from env: {SUPER_ADMIN_IDS or '(none)'}")
     log.info("=" * 60)
 
     offset = get_update_offset()
-    # Get all pending updates (long poll with timeout 0 = quick)
     updates = get_updates(offset=offset, timeout=0)
 
     if not updates:
@@ -586,10 +520,8 @@ def main():
             handle_command(update)
         except Exception as e:
             log.exception(f"Update handling failed: {e}")
-        # Small delay between commands
         time.sleep(0.3)
 
-    # Save offset
     set_update_offset(max_update_id)
     log.info(f"Done. Next offset: {max_update_id}")
     return 0
