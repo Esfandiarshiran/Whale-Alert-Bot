@@ -1,0 +1,64 @@
+name: Admin Poll (Fast Response - Every 2 min)
+
+on:
+  schedule:
+    # هر ۲ دقیقه یکبار اجرا شود (پاسخ فوری به کاربران)
+    - cron: '*/2 * * * *'
+  workflow_dispatch:  # اجرای دستی برای تست
+
+# جلوگیری از تداخل همزمان
+concurrency:
+  group: admin-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2  # حداکثر ۲ دقیقه (خیلی سبک است)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore cache (برای دسترسی به متادیتای هشدارها)
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: whale-cache-v1
+          restore-keys: |
+            whale-cache-v1
+
+      - name: Process admin commands (start, addchannel, test, etc.)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPER_ADMIN_IDS: ${{ secrets.SUPER_ADMIN_IDS }}
+        run: |
+          python -m src.admin_bot 2>&1 | tee admin_logs.txt || true
+
+      - name: Upload admin logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-logs
+          path: admin_logs.txt
+
+      - name: Save cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: whale-cache-v1

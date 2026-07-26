@@ -266,11 +266,11 @@ def build_share_buttons(tx_text: str = None, mood: str = None,
             'url': tweet_url,
         }])
 
-    # === Row 3: Cross-promo (the funnel) ===
-    buttons.append([{
-        'text': '🛠  40+ crypto tools — try free',
-        'url': f'https://t.me/{FOOTER_MAIN_BOT.lstrip("@")}',
-    }])
+    # # === Row 3: Cross-promo (the funnel) ===
+    # buttons.append([{
+    #     'text': '🛠  40+ crypto tools — try free',
+    #     'url': f'https://t.me/{FOOTER_MAIN_BOT.lstrip("@")}',
+    # }])
     return buttons
 
 
