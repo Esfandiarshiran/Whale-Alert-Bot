@@ -383,6 +383,7 @@ def _handle_start(chat_id: str, user_id: str, username: str) -> None:
 
 
 def _handle_spot_request(chat_id: str, user_id: str, txid_short: str) -> None:
+    log.info(f"SPOT REQUEST STARTED: user={user_id}, txid={txid_short}")
     """User tapped 'Personalize & Share' on an alert.
     Look up the alert metadata and ask for their username."""
     if not txid_short:
