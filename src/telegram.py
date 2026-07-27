@@ -224,39 +224,21 @@ def _send_photo(channel_id: str, photo_path: str, caption: str,
 
 
 # =====================================================================
-# INLINE BUTTONS (for virality + interactivity)
+# INLINE BUTTONS — simple, just Share on Twitter
 # =====================================================================
 def build_share_buttons(tx_text: str = None, mood: str = None,
                          txid_short: str = None) -> List[List[Dict]]:
     """
     Build inline keyboard for CHANNEL posts.
-    IMPORTANT: In Telegram channels, switch_inline_query buttons are unreliable.
-    Only URL buttons work reliably for channel subscribers.
-    So we use URL buttons only:
-    1. PERSONALIZE (url → deep link to bot DM)
-    2. SHARE ON TWITTER (url → twitter intent)
-    3. Cross-promo: "🛠 40+ crypto tools" (url)
-
-    The personalization button is the KEY viral mechanic — it opens a DM
-    with the bot where switch_inline_query buttons DO work.
+    SIMPLE: just ONE button — Share on Twitter.
+    No personalization, no vote buttons, no deep links.
     """
-    from .config import TELEGRAM_BOT_USERNAME
     from urllib.parse import quote
-
     buttons = []
 
-    # === Row 1: PERSONALIZE & SHARE (the viral mechanic) ===
-    if TELEGRAM_BOT_USERNAME and txid_short:
-        deep_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start=spot_{txid_short}"
-        buttons.append([{
-            'text': '🎨  Personalize & Share this card',
-            'url': deep_link,
-        }])
-
-    # === Row 2: Share on Twitter (URL button — works in channels) ===
-    # Build a short tweet intent
+    # Only ONE button: Share on Twitter
     if tx_text:
-        # Extract key info for tweet (first 200 chars)
+        # Build tweet text (max 200 chars for clean tweet)
         tweet_text = tx_text[:200]
         if len(tx_text) > 200:
             tweet_text += '...'
@@ -266,70 +248,11 @@ def build_share_buttons(tx_text: str = None, mood: str = None,
             'url': tweet_url,
         }])
 
-    # === Row 3: Cross-promo (the funnel) ===
-    buttons.append([{
-        'text': '🛠  40+ crypto tools — try free',
-        'url': f'https://t.me/{FOOTER_MAIN_BOT.lstrip("@")}',
-    }])
     return buttons
 
 
-def build_personalized_card_buttons(tweet_url: str = None, alert_text: str = None) -> List[List[Dict]]:
-    """
-    Build buttons for the personalized card delivery (sent to user's DM).
-    These are the SHARE buttons — one-click distribution to social platforms.
-
-    Row 1: "🐦 Tweet this" (URL to twitter intent)
-    Row 2: "📢 Forward on Telegram" + "📱 Post to my channel"
-    Row 3: "🔄 Make another" (back to /spot)
-    Row 4: Cross-promo (the funnel)
-    """
-    from .config import TELEGRAM_BOT_USERNAME
-    buttons = []
-
-    # Row 1: Twitter share
-    if tweet_url:
-        buttons.append([{
-            'text': '🐦  Share on Twitter / X',
-            'url': tweet_url,
-        }])
-
-    # Row 2: Telegram forward + post to channel
-    if alert_text:
-        # switch_inline_query lets user pick any chat to forward to
-        share_text = (alert_text[:256] + '...') if len(alert_text) > 256 else alert_text
-        buttons.append([
-            {
-                'text': '📢  Forward to chats',
-                'switch_inline_query': share_text,
-            },
-            {
-                'text': '📱  Post to my channel',
-                'switch_inline_query': share_text,
-            },
-        ])
-
-    # Row 3: Make another
-    if TELEGRAM_BOT_USERNAME:
-        buttons.append([{
-            'text': '🔄  Personalize another alert',
-            'url': f'https://t.me/{TELEGRAM_BOT_USERNAME}?start=help',
-        }])
-
-    # Row 4: Cross-promo
-    buttons.append([{
-        'text': '🛠  40+ crypto tools — try free',
-        'url': f'https://t.me/{FOOTER_MAIN_BOT.lstrip("@")}',
-    }])
-
-    return buttons
-
-
-def build_twitter_intent_url(alert: dict, username: str = None) -> str:
-    """
-    Build a Twitter intent URL with pre-filled tweet text.
-    User still needs to attach the card image manually (Twitter API limitation).
-    """
+def build_twitter_intent_url(alert: dict) -> str:
+    """Build a Twitter intent URL with pre-filled tweet text."""
     from urllib.parse import quote
     value_usd = alert.get('value_usd', 0)
     asset = alert.get('asset', 'BTC')
@@ -341,17 +264,11 @@ def build_twitter_intent_url(alert: dict, username: str = None) -> str:
     dir_label = alert.get('direction', {}).get('label', '')
     score = alert.get('score', 0)
 
-    if username:
-        spotted = f"Spotted by @{username}  "
-    else:
-        spotted = ""
-
     tweet_text = (
-        f"🐋 {val_str} {asset} whale move just detected!\n"
+        f"🐋 {val_str} {asset} whale move!\n"
         f"{dir_label}\n"
         f"Whale Score: {score}/100\n\n"
-        f"{spotted}"
-        f"Get real-time whale alerts: t.me/onnchainWhaleAlert\n"
+        f"Real-time whale alerts: t.me/onnchainWhaleAlert\n"
         f"#Bitcoin #CryptoWhales #OnChain"
     )
     return f"https://twitter.com/intent/tweet?text={quote(tweet_text)}"
@@ -362,8 +279,10 @@ def build_twitter_intent_url(alert: dict, username: str = None) -> str:
 # =====================================================================
 def get_updates(offset: int = 0, timeout: int = 0) -> List[Dict]:
     """Poll Telegram for new updates (admin commands).
-    Returns list of update dicts. NEVER raises."""
+    Returns list of update dicts. NEVER raises.
+    Detects 409 Conflict (token used by another bot instance)."""
     if not TELEGRAM_BOT_TOKEN:
+        log.error("TELEGRAM_BOT_TOKEN not set - cannot poll for commands")
         return []
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates'
     params = {
@@ -372,11 +291,27 @@ def get_updates(offset: int = 0, timeout: int = 0) -> List[Dict]:
         'allowed_updates': json.dumps(['message']),
     }
     try:
-        resp = requests.get(url, params=params, timeout=timeout + 10)
+        resp = requests.get(url, params=params, timeout=timeout + 15)
         if resp.status_code == 200:
             data = resp.json()
-            return data.get('result', [])
-        log.warning(f"getUpdates returned {resp.status_code}: {resp.text[:200]}")
+            if data.get('ok'):
+                return data.get('result', [])
+            else:
+                log.warning(f"getUpdates ok=false: {data.get('description', '')}")
+                return []
+        if resp.status_code == 409:
+            # CRITICAL: Another bot instance is using getUpdates on same token
+            log.error("409 Conflict! This bot token is ALSO being used by another getUpdates consumer.")
+            log.error("If you're using the SAME token as your main bot, that's the problem.")
+            log.error("Solution: Create a SEPARATE bot via @BotFather and use its token.")
+            return []
+        if resp.status_code == 401:
+            log.error("401 Unauthorized! TELEGRAM_BOT_TOKEN is invalid or revoked.")
+            return []
+        log.warning(f"getUpdates returned {resp.status_code}: {resp.text[:300]}")
+        return []
+    except requests.exceptions.Timeout:
+        log.warning("getUpdates timeout (this is normal for long-polling)")
         return []
     except Exception as e:
         log.warning(f"getUpdates error: {e}")
@@ -384,8 +319,10 @@ def get_updates(offset: int = 0, timeout: int = 0) -> List[Dict]:
 
 
 def send_admin_reply(chat_id: str, text: str) -> bool:
-    """Send a reply to an admin's command. Never raises."""
+    """Send a reply to an admin's command. Never raises.
+    Logs errors clearly for debugging."""
     if not TELEGRAM_BOT_TOKEN:
+        log.error("TELEGRAM_BOT_TOKEN not set - cannot send reply")
         return False
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
     data = {
@@ -395,7 +332,20 @@ def send_admin_reply(chat_id: str, text: str) -> bool:
     }
     try:
         resp = requests.post(url, data=data, timeout=TG_SEND_TIMEOUT)
-        return resp.status_code == 200
+        if resp.status_code == 200:
+            return True
+        # Log the actual error for debugging
+        try:
+            err_data = resp.json()
+            err_desc = err_data.get('description', '')
+        except Exception:
+            err_desc = resp.text[:200]
+        log.error(f"sendMessage failed {resp.status_code}: {err_desc}")
+        if resp.status_code == 403:
+            log.error("403 Forbidden: Bot was blocked by user or kicked from chat")
+        elif resp.status_code == 400:
+            log.error(f"400 Bad Request: {err_desc}")
+        return False
     except Exception as e:
         log.warning(f"Admin reply error: {e}")
         return False

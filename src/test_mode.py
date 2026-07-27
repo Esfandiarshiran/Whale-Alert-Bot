@@ -198,59 +198,31 @@ def main():
         log.error("No test alerts could be generated (network issues?)")
         return 1
 
-    log.info(f"Generated {len(alerts)} test alert(s)")
+    # Only send ONE alert (the first one) to avoid spam
+    alert = alerts[0]
+    log.info(f"Generated 1 test alert (from {len(alerts)} candidates)")
 
-    for alert in alerts:
-        message = format_alert(alert)
-        # Prepend test marker
-        message = f"{TEST_MARKER}\n\n" + message
-        photo_path = generate_alert_card(alert)
+    message = format_alert(alert)
+    # Prepend test marker
+    message = f"{TEST_MARKER}\n\n" + message
+    photo_path = generate_alert_card(alert)
 
-        # Get txid_short for personalization deep link
-        full_txid = alert.get('tx_id', '')
-        txid_short = None
-        if full_txid:
-            clean_txid = full_txid
-            for prefix in ('btc_', 'eth_', 'stable_', 'trx_usdt_'):
-                if clean_txid.startswith(prefix):
-                    clean_txid = clean_txid[len(prefix):]
-                    break
-            txid_short = clean_txid[:16] if clean_txid else None
-
-        # Store alert metadata for personalization
-        if txid_short:
-            try:
-                from .cache import store_alert_meta
-                store_alert_meta(txid_short, alert)
-            except Exception:
-                pass
-
-        # Get mood for vote buttons
-        mood = 'neutral'
-        try:
-            from .virality import generate_insight
-            insight = generate_insight(alert)
-            mood = insight.get('mood', 'neutral')
-        except Exception:
-            pass
-
-        if args.dry_run:
-            print("\n" + "=" * 60)
-            print(f"TEST ALERT — {alert['asset']} (source: real latest tx)")
-            print("=" * 60)
-            print(f"Score: {alert['score']}/100")
-            print(f"Value: {fmt_usd(alert['value_usd'])}")
-            print(f"Direction: {alert['direction']['arrow']} {alert['direction']['label']}")
-            print(f"txid_short: {txid_short}")
-            print(f"Card: {photo_path or '(none)'}")
-            print()
-            print(message)
-            print("=" * 60)
-        else:
-            log.info(f"Sending TEST alert for {alert['asset']}...")
-            buttons = build_share_buttons(message, mood=mood, txid_short=txid_short)
-            result = send_to_all_channels(message, photo_path=photo_path, inline_buttons=buttons)
-            log.info(f"Sent: {result['success']} ok, {result['failed']} failed")
+    if args.dry_run:
+        print("\n" + "=" * 60)
+        print(f"TEST ALERT — {alert['asset']} (source: real latest tx)")
+        print("=" * 60)
+        print(f"Score: {alert['score']}/100")
+        print(f"Value: {fmt_usd(alert['value_usd'])}")
+        print(f"Direction: {alert['direction']['arrow']} {alert['direction']['label']}")
+        print(f"Card: {photo_path or '(none)'}")
+        print()
+        print(message)
+        print("=" * 60)
+    else:
+        log.info(f"Sending TEST alert for {alert['asset']}...")
+        buttons = build_share_buttons(message)
+        result = send_to_all_channels(message, photo_path=photo_path, inline_buttons=buttons)
+        log.info(f"Sent: {result['success']} ok, {result['failed']} failed")
 
     log.info("Test mode complete")
     return 0

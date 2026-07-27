@@ -156,81 +156,87 @@ def format_alert(alert: Dict) -> str:
 
 
 def format_welcome_message() -> str:
-    """Welcome message for first run."""
+    """Welcome message for first run — clean, organized, no ✅ emoji."""
+    divider = "━" * 30
     lines = [
-        "🐋  WHALE ALERT BOT — ACTIVATED",
-        "━" * 30,
+        f"🐋 WHALE ALERT BOT — ACTIVATED",
+        divider,
         "",
         "Real-time on-chain whale tracking — now LIVE.",
         "",
-        "📡  WHAT YOU'LL SEE:",
-        "  • BTC transfers > $1M  (mempool)",
-        "  • ETH transfers > $500K  (Blockscout)",
-        "  • Stablecoin transfers > $1M  (USDT/USDC/DAI)",
+        f"📡 WHAT YOU'LL SEE:",
+        "   • BTC transfers > $1M  (mempool)",
+        "   • ETH transfers > $500K  (Blockscout)",
+        "   • Stablecoin transfers > $1M  (USDT/USDC/DAI)",
         "",
-        "🚀  WHAT MAKES US DIFFERENT:",
-        "  • Whale Score (0-100) — instant signal of significance",
-        "  • Direction analysis — → Exchange (sell pressure)",
-        "                       ← Exchange (accumulation)",
-        "                       ↔ Cold storage (private)",
-        "  • Wallet memory — first-seen detection, last-active",
-        "  • Cluster alerts — when 4+ whales move within 30 min",
-        "  • Beautiful shareable cards — perfect for Twitter/X",
+        f"🚀 WHAT MAKES US DIFFERENT:",
+        "   • Whale Score (0-100) — instant significance",
+        "   • Direction analysis:",
+        "       → Exchange = sell pressure",
+        "       ← Exchange = accumulation",
+        "       ↔ Cold storage = private transfer",
+        "   • Wallet memory — first-seen detection",
+        "   • Cluster alerts — 4+ whales in 30 min",
+        "   • Beautiful shareable cards",
         "",
-        "✅  All data verifiable on-chain. No fabricated numbers.",
-        "✅  100% free — built on public APIs.",
+        "✦ All data verifiable on-chain.",
+        "✦ 100% free — built on public APIs.",
         "",
-        "━" * 30,
+        divider,
         FOOTER_TEXT,
     ]
     return "\n".join(lines)
 
 
 def format_daily_summary(stats: dict) -> str:
-    """Daily summary message."""
+    """Daily summary message — clean, organized."""
+    divider = "━" * 30
     now = datetime.now(timezone.utc)
     lines = [
-        "📊  DAILY WHALE DIGEST",
-        "━" * 30,
+        f"📊 DAILY WHALE DIGEST",
+        divider,
         f"Period: last 24h (as of {now:%Y-%m-%d %H:%M} UTC)",
         "",
-        f"Total alerts: {stats.get('total_alerts', 0)}",
-        f"  BTC: {stats.get('btc_count', 0)}",
-        f"  ETH: {stats.get('eth_count', 0)}",
-        f"  Stables: {stats.get('stable_count', 0)}",
-        "",
     ]
+    
+    total_alerts = stats.get('total_alerts', 0)
+    lines.append(f"Total alerts: {total_alerts}")
+    lines.append(f"   BTC: {stats.get('btc_count', 0)}")
+    lines.append(f"   ETH: {stats.get('eth_count', 0)}")
+    lines.append(f"   Stables: {stats.get('stable_count', 0)}")
+    lines.append("")
+
     total_usd = stats.get('total_usd', 0)
     if total_usd > 0:
         lines.append(f"Total whale volume: {fmt_usd(total_usd)}")
         lines.append("")
 
     net_flow = stats.get('net_flow', 0)
-    if net_flow != 0:
-        if net_flow > 0:
-            lines.append(f"Net exchange INFLOW: +{fmt_usd(abs(net_flow))}")
-            lines.append("  → Potential sell pressure (bearish lean)")
-        else:
-            lines.append(f"Net exchange OUTFLOW: -{fmt_usd(abs(net_flow))}")
-            lines.append("  → Potential accumulation (bullish lean)")
+    if net_flow > 0:
+        lines.append(f"Net exchange INFLOW: +{fmt_usd(abs(net_flow))}")
+        lines.append("   → Potential sell pressure (bearish)")
+        lines.append("")
+    elif net_flow < 0:
+        lines.append(f"Net exchange OUTFLOW: -{fmt_usd(abs(net_flow))}")
+        lines.append("   → Potential accumulation (bullish)")
         lines.append("")
 
     top = stats.get('top_whale')
     if top:
-        lines.append("🏆  TOP WHALE OF THE DAY:")
-        lines.append(f"  {top.get('emoji', '🐋')}  {fmt_usd(top.get('value_usd', 0))} {top.get('asset', '')}")
+        lines.append(f"🏆 TOP WHALE OF THE DAY:")
+        lines.append(f"   {top.get('emoji', '🐋')} {fmt_usd(top.get('value_usd', 0))} {top.get('asset', '')}")
         if top.get('direction_label'):
-            lines.append(f"  {top.get('direction_label', '')}")
+            lines.append(f"   {top.get('direction_label', '')}")
         if top.get('score'):
-            lines.append(f"  Whale Score: {top.get('score')}/100")
+            lines.append(f"   Whale Score: {top.get('score')}/100")
         lines.append("")
 
-    if stats.get('total_alerts', 0) == 0:
+    if total_alerts == 0:
         lines.append("No whale activity met the threshold today.")
-        lines.append("This is normal — whale movements are intermittent.")
+        lines.append("Whale movements are intermittent — this is normal.")
         lines.append("")
 
-    lines.append("━" * 30)
+    lines.append(divider)
     lines.append(FOOTER_TEXT)
     return "\n".join(lines)
 
@@ -265,51 +271,56 @@ def format_cluster_alert(cluster: dict) -> str:
 
 
 def format_help_message(is_admin: bool = False) -> str:
-    """Help message for /help command."""
+    """Help message for /help command — clean format."""
+    divider = "━" * 30
     lines = [
-        "🐋  WHALE ALERT BOT — HELP",
-        "━" * 30,
+        f"🐋 WHALE ALERT BOT — HELP",
+        divider,
         "",
-        "PUBLIC COMMANDS:",
-        "  /help        — Show this help",
-        "  /status      — Bot status + uptime",
-        "  /stats       — Today's whale stats",
+        f"PUBLIC COMMANDS:",
+        f"   /start       — Welcome message",
+        f"   /help        — Show this help",
+        f"   /status      — Bot status",
+        f"   /stats       — Today's whale stats",
         "",
     ]
     if is_admin:
         lines += [
-            "ADMIN COMMANDS:",
-            "  /addchannel @username  — Add a channel to distribution",
-            "  /addchannel -100123..  — Add by numeric channel ID",
-            "  /removechannel @username  — Remove a channel",
-            "  /listchannels  — List all active channels",
-            "  /addadmin <user_id>  — Add an admin",
-            "  /removeadmin <user_id>  — Remove an admin",
-            "  /listadmins  — List all admins",
+            f"ADMIN COMMANDS:",
+            f"   /test [btc|eth|tron]  — Generate test alert",
+            f"   /addchannel @username — Add a channel",
+            f"   /addchannel -100123.. — Add by numeric ID",
+            f"   /removechannel @username — Remove a channel",
+            f"   /listchannels  — List all active channels",
+            f"   /addadmin <user_id>    — Add an admin",
+            f"   /removeadmin <user_id> — Remove an admin",
+            f"   /listadmins    — List all admins",
             "",
         ]
     lines += [
-        "━" * 30,
+        divider,
         FOOTER_TEXT,
     ]
     return "\n".join(lines)
 
 
 def format_status_message(channels_count: int, stats: dict, diag: dict) -> str:
+    divider = "━" * 30
     lines = [
-        "📊  BOT STATUS",
-        "━" * 30,
+        f"📊 BOT STATUS",
+        divider,
         f"Active channels: {channels_count}",
+        f"",
         f"Alerts posted (since last summary):",
-        f"  BTC: {stats.get('btc', 0)}",
-        f"  ETH: {stats.get('eth', 0)}",
-        f"  Stables: {stats.get('stable', 0)}",
-        f"  Total: {stats.get('total', 0)}",
-        "",
+        f"   BTC: {stats.get('btc', 0)}",
+        f"   ETH: {stats.get('eth', 0)}",
+        f"   Stables: {stats.get('stable', 0)}",
+        f"   Total: {stats.get('total', 0)}",
+        f"",
         f"Wallets tracked: {diag.get('wallets_tracked', 0)}",
         f"Alerts in memory: {diag.get('recent_alerts_count', 0)}",
-        "",
-        "━" * 30,
+        f"",
+        divider,
         FOOTER_TEXT,
     ]
     return "\n".join(lines)

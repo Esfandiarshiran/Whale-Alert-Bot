@@ -88,38 +88,9 @@ def main():
     for message, photo_path, tx_id, alert_type, meta in alerts:
         # Build share buttons (only for individual alerts, not cluster)
         buttons = None
-        txid_short = None
         if alert_type != 'cluster':
-            # Generate insight to get mood for the Bullish/Bearish vote buttons
-            mood = 'neutral'
-            try:
-                from .virality import generate_insight
-                insight = generate_insight(meta or {})
-                mood = insight.get('mood', 'neutral')
-            except Exception:
-                pass
-
-            # Generate short txid for personalization deep link
-            # Use first 16 chars of tx_id (without the chain prefix)
-            full_txid = meta.get('tx_id', tx_id) if isinstance(meta, dict) else tx_id
-            if full_txid:
-                # Remove chain prefix (btc_, eth_, stable_, trx_usdt_)
-                clean_txid = full_txid
-                for prefix in ('btc_', 'eth_', 'stable_', 'trx_usdt_'):
-                    if clean_txid.startswith(prefix):
-                        clean_txid = clean_txid[len(prefix):]
-                        break
-                txid_short = clean_txid[:16] if clean_txid else None
-
-            buttons = build_share_buttons(message, mood=mood, txid_short=txid_short)
-
-            # Store alert metadata for personalization (keyed by short txid)
-            if txid_short and isinstance(meta, dict):
-                try:
-                    from .cache import store_alert_meta
-                    store_alert_meta(txid_short, meta)
-                except Exception as e:
-                    log.debug(f"Alert meta store error: {e}")
+            # Simple: just Share on Twitter button
+            buttons = build_share_buttons(message)
 
         if send_to_all_channels(message, photo_path=photo_path, inline_buttons=buttons)['success'] > 0:
             mark_posted(tx_id, alert_type)
