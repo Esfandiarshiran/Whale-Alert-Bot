@@ -22,7 +22,10 @@ from .supabase import (
     list_channels, add_channel, remove_channel, get_channel_count,
     is_admin, list_admins, add_admin, remove_admin,
 )
-from .config import SUPER_ADMIN_IDS, FOOTER_TEXT, FOOTER_MAIN_BOT, FOOTER_MAIN_CHANNEL, log
+from .config import (
+    SUPER_ADMIN_IDS, FOOTER_TEXT, FOOTER_MAIN_BOT, FOOTER_MAIN_CHANNEL,
+    ADMIN_CMD_MAX_PER_USER, ADMIN_CMD_MAX_PER_RUN, log,
+)
 from .formatter import format_help_message, format_status_message
 
 
@@ -30,9 +33,15 @@ from .formatter import format_help_message, format_status_message
 ADMIN_COMMANDS = {'/addchannel', '/removechannel', '/listchannels',
                   '/addadmin', '/removeadmin', '/listadmins', '/test'}
 
+# Rate limiting state (per polling session)
+_user_command_counts = {}  # user_id -> count
+_total_commands = 0
+
 
 def handle_command(update: dict) -> None:
-    """Process a single Telegram update (message)."""
+    """Process a single Telegram update (message).
+    Includes rate limiting to prevent abuse."""
+    global _total_commands
     try:
         message = update.get('message') or {}
         if not message:
@@ -46,9 +55,32 @@ def handle_command(update: dict) -> None:
         if not text:
             return
 
+        # SECURITY: Limit message length to prevent abuse
+        if len(text) > 1000:
+            log.warning(f"Message too long ({len(text)} chars) from user, ignoring")
+            return
+
         user = message.get('from') or {}
         user_id = str(user.get('id', ''))
         username = user.get('username', '') or user.get('first_name', '')
+
+        # RATE LIMITING: per-user limit
+        user_count = _user_command_counts.get(user_id, 0)
+        if user_count >= ADMIN_CMD_MAX_PER_USER:
+            log.warning(f"User {user_id} hit rate limit ({user_count} commands)")
+            # Only warn once per session
+            if user_count == ADMIN_CMD_MAX_PER_USER:
+                send_admin_reply(chat_id, "⚠️ Rate limit reached. Please wait for next polling cycle.")
+            _user_command_counts[user_id] = user_count + 1
+            return
+
+        # RATE LIMITING: total commands per run
+        if _total_commands >= ADMIN_CMD_MAX_PER_RUN:
+            log.warning(f"Total command limit reached ({_total_commands}), skipping")
+            return
+
+        _user_command_counts[user_id] = user_count + 1
+        _total_commands += 1
 
         # Parse command + args
         parts = text.split()

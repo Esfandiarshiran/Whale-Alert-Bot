@@ -87,6 +87,13 @@ TG_SEND_TIMEOUT   = 30           # http timeout
 TG_MAX_RETRIES    = 3            # retries on transient failures
 TG_BATCH_MAX      = 20           # max alerts per scan run (avoid spam)
 
+# Channel auto-disable: more lenient (was 5, now 10 consecutive failures)
+CHANNEL_FAILURE_THRESHOLD = 10
+
+# Admin command rate limiting (per user per polling session)
+ADMIN_CMD_MAX_PER_USER = 5       # max commands from one user per poll run
+ADMIN_CMD_MAX_PER_RUN = 30       # max total commands per poll run
+
 # =====================================================================
 # LOGGING
 # =====================================================================

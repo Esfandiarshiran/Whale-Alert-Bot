@@ -75,120 +75,129 @@ def run_whale_scan() -> List[Tuple]:
     alerts_to_send: List[Tuple] = []
     all_candidates: List[Dict] = []  # for whale-of-the-day picking
 
-    # === 1. Prices ===
-    btc_price = get_btc_price() or 60000
-    eth_price = get_eth_price() or 3000
-    log.info(f"Prices: BTC=${btc_price:,.0f}  ETH=${eth_price:,.0f}")
+    # === 1. Prices — if API fails, skip that source (don't use fake prices) ===
+    btc_price = get_btc_price()
+    eth_price = get_eth_price()
+    if btc_price:
+        log.info(f"BTC price: ${btc_price:,.0f}")
+    else:
+        log.warning("BTC price fetch failed — will skip BTC alerts this run")
+    if eth_price:
+        log.info(f"ETH price: ${eth_price:,.0f}")
+    else:
+        log.warning("ETH price fetch failed — will skip ETH alerts this run")
 
     # === 2. BTC ===
-    try:
-        btc_min_btc = MIN_USD_BTC / btc_price
-        btc_txs = fetch_btc_large_txs(min_value_btc=btc_min_btc, limit=8)
-        if btc_txs:
-            log.info(f"BTC: {len(btc_txs)} large txs found")
-            for tx in btc_txs:
-                tx_id = f"btc_{tx['txid']}"
-                if is_posted(tx_id):
-                    continue
-                value_usd = tx['value_btc'] * btc_price
-                if value_usd < MIN_USD_BTC:
-                    continue
+    if btc_price:
+        try:
+            btc_min_btc = MIN_USD_BTC / btc_price
+            btc_txs = fetch_btc_large_txs(min_value_btc=btc_min_btc, limit=8)
+            if btc_txs:
+                log.info(f"BTC: {len(btc_txs)} large txs found")
+                for tx in btc_txs:
+                    tx_id = f"btc_{tx['txid']}"
+                    if is_posted(tx_id):
+                        continue
+                    value_usd = tx['value_btc'] * btc_price
+                    if value_usd < MIN_USD_BTC:
+                        continue
 
-                # Enrich addresses
-                from_data = enrich_btc_address(tx.get('from_addr', ''))
-                to_data = enrich_btc_address(tx.get('to_addr', ''))
-                direction = infer_direction(from_data, to_data)
+                    # Enrich addresses
+                    from_data = enrich_btc_address(tx.get('from_addr', ''))
+                    to_data = enrich_btc_address(tx.get('to_addr', ''))
+                    direction = infer_direction(from_data, to_data)
 
-                # Cluster context
-                cluster = detect_cluster()
+                    # Cluster context
+                    cluster = detect_cluster()
 
-                # Whale score
-                is_new = from_data.get('is_new_wallet', False) or to_data.get('is_new_wallet', False)
-                score_data = compute_whale_score(
-                    value_usd=value_usd,
-                    direction=direction['direction'],
-                    is_new_wallet=is_new,
-                    cluster_count=cluster.get('count', 0),
-                )
+                    # Whale score
+                    is_new = from_data.get('is_new_wallet', False) or to_data.get('is_new_wallet', False)
+                    score_data = compute_whale_score(
+                        value_usd=value_usd,
+                        direction=direction['direction'],
+                        is_new_wallet=is_new,
+                        cluster_count=cluster.get('count', 0),
+                    )
 
-                tier = get_tier(value_usd)
-                ts = datetime.now(timezone.utc)
+                    tier = get_tier(value_usd)
+                    ts = datetime.now(timezone.utc)
 
-                alert_meta = {
-                    'asset': 'BTC',
-                    'value_usd': value_usd,
-                    'crypto_amount': tx['value_btc'],
-                    'tier': tier,
-                    'direction': direction,
-                    'from': from_data,
-                    'to': to_data,
-                    'score': score_data['score'],
-                    'score_breakdown': score_data['breakdown'],
-                    'tx_id': tx['txid'],
-                    'tx_short': tx['txid'][:16] + '...',
-                    'timestamp': ts,
-                    'cluster': cluster,
-                    'is_first_seen': is_new,
-                }
+                    alert_meta = {
+                        'asset': 'BTC',
+                        'value_usd': value_usd,
+                        'crypto_amount': tx['value_btc'],
+                        'tier': tier,
+                        'direction': direction,
+                        'from': from_data,
+                        'to': to_data,
+                        'score': score_data['score'],
+                        'score_breakdown': score_data['breakdown'],
+                        'tx_id': tx['txid'],
+                        'tx_short': tx['txid'][:16] + '...',
+                        'timestamp': ts,
+                        'cluster': cluster,
+                        'is_first_seen': is_new,
+                    }
 
-                message = format_alert(alert_meta)
-                photo_path = generate_alert_card(alert_meta)
+                    message = format_alert(alert_meta)
+                    photo_path = generate_alert_card(alert_meta)
 
-                alerts_to_send.append((message, photo_path, tx_id, 'btc', alert_meta))
-                all_candidates.append(alert_meta)
-    except Exception as e:
-        log.exception(f"BTC scan error: {e}")
+                    alerts_to_send.append((message, photo_path, tx_id, 'btc', alert_meta))
+                    all_candidates.append(alert_meta)
+        except Exception as e:
+            log.exception(f"BTC scan error: {e}")
 
     # === 3. ETH ===
-    try:
-        eth_min_eth = MIN_USD_ETH / eth_price
-        eth_txs = fetch_eth_large_txs(min_value_eth=eth_min_eth, limit=10)
-        if eth_txs:
-            log.info(f"ETH: {len(eth_txs)} large txs found")
-            for tx in eth_txs:
-                tx_id = f"eth_{tx['hash']}"
-                if is_posted(tx_id):
-                    continue
-                value_usd = tx['value_eth'] * eth_price
-                if value_usd < MIN_USD_ETH:
-                    continue
+    if eth_price:
+        try:
+            eth_min_eth = MIN_USD_ETH / eth_price
+            eth_txs = fetch_eth_large_txs(min_value_eth=eth_min_eth, limit=10)
+            if eth_txs:
+                log.info(f"ETH: {len(eth_txs)} large txs found")
+                for tx in eth_txs:
+                    tx_id = f"eth_{tx['hash']}"
+                    if is_posted(tx_id):
+                        continue
+                    value_usd = tx['value_eth'] * eth_price
+                    if value_usd < MIN_USD_ETH:
+                        continue
 
-                from_data = enrich_eth_address(tx.get('from', ''))
-                to_data = enrich_eth_address(tx.get('to', ''))
-                direction = infer_direction(from_data, to_data)
-                cluster = detect_cluster()
-                is_new = from_data.get('is_new_wallet', False) or to_data.get('is_new_wallet', False)
-                score_data = compute_whale_score(
-                    value_usd=value_usd,
-                    direction=direction['direction'],
-                    is_new_wallet=is_new,
-                    cluster_count=cluster.get('count', 0),
-                )
-                tier = get_tier(value_usd)
-                ts = _parse_timestamp(tx.get('timestamp'))
+                    from_data = enrich_eth_address(tx.get('from', ''))
+                    to_data = enrich_eth_address(tx.get('to', ''))
+                    direction = infer_direction(from_data, to_data)
+                    cluster = detect_cluster()
+                    is_new = from_data.get('is_new_wallet', False) or to_data.get('is_new_wallet', False)
+                    score_data = compute_whale_score(
+                        value_usd=value_usd,
+                        direction=direction['direction'],
+                        is_new_wallet=is_new,
+                        cluster_count=cluster.get('count', 0),
+                    )
+                    tier = get_tier(value_usd)
+                    ts = _parse_timestamp(tx.get('timestamp'))
 
-                alert_meta = {
-                    'asset': 'ETH',
-                    'value_usd': value_usd,
-                    'crypto_amount': tx['value_eth'],
-                    'tier': tier,
-                    'direction': direction,
-                    'from': from_data,
-                    'to': to_data,
-                    'score': score_data['score'],
-                    'score_breakdown': score_data['breakdown'],
-                    'tx_id': tx['hash'],
-                    'tx_short': tx['hash'][:16] + '...',
-                    'timestamp': ts,
-                    'cluster': cluster,
-                    'is_first_seen': is_new,
-                }
-                message = format_alert(alert_meta)
-                photo_path = generate_alert_card(alert_meta)
-                alerts_to_send.append((message, photo_path, tx_id, 'eth', alert_meta))
-                all_candidates.append(alert_meta)
-    except Exception as e:
-        log.exception(f"ETH scan error: {e}")
+                    alert_meta = {
+                        'asset': 'ETH',
+                        'value_usd': value_usd,
+                        'crypto_amount': tx['value_eth'],
+                        'tier': tier,
+                        'direction': direction,
+                        'from': from_data,
+                        'to': to_data,
+                        'score': score_data['score'],
+                        'score_breakdown': score_data['breakdown'],
+                        'tx_id': tx['hash'],
+                        'tx_short': tx['hash'][:16] + '...',
+                        'timestamp': ts,
+                        'cluster': cluster,
+                        'is_first_seen': is_new,
+                    }
+                    message = format_alert(alert_meta)
+                    photo_path = generate_alert_card(alert_meta)
+                    alerts_to_send.append((message, photo_path, tx_id, 'eth', alert_meta))
+                    all_candidates.append(alert_meta)
+        except Exception as e:
+            log.exception(f"ETH scan error: {e}")
 
     # === 4. Stablecoins (Ethereum) ===
     try:

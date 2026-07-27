@@ -13,10 +13,56 @@ from .config import (
 )
 from .http import fetch_json
 from .cache import get_wallet, touch_wallet
+from .config import CACHE_DIR, log
+import json
+import time
+from pathlib import Path
+
+# Persistent label cache — survives between runs (file-based)
+_LABEL_CACHE_FILE = CACHE_DIR / 'labels_cache.json'
+_LABEL_CACHE_TTL = 86400  # 24 hours
 
 
-# Cache for live-fetched labels (in-process, doesn't persist)
-_LABEL_CACHE: Dict[str, str] = {}
+def _load_label_cache() -> dict:
+    """Load label cache from file."""
+    try:
+        if _LABEL_CACHE_FILE.exists():
+            data = json.loads(_LABEL_CACHE_FILE.read_text())
+            # Filter out expired entries
+            now = time.time()
+            return {k: v for k, v in data.items()
+                    if isinstance(v, dict) and now - v.get('ts', 0) < _LABEL_CACHE_TTL}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_label_cache(cache: dict) -> None:
+    """Save label cache to file."""
+    try:
+        _LABEL_CACHE_FILE.write_text(json.dumps(cache, indent=2))
+    except Exception as e:
+        log.debug(f"Label cache save error: {e}")
+
+
+def _get_cached_label(addr: str) -> str:
+    """Get label from cache. Returns '' if not found or expired."""
+    cache = _load_label_cache()
+    entry = cache.get(addr)
+    if entry:
+        return entry.get('label', '')
+    return ''
+
+
+def _set_cached_label(addr: str, label: str) -> None:
+    """Set label in cache."""
+    cache = _load_label_cache()
+    cache[addr] = {'label': label, 'ts': time.time()}
+    # Trim if too big (keep last 5000 entries)
+    if len(cache) > 5000:
+        sorted_items = sorted(cache.items(), key=lambda x: x[1].get('ts', 0), reverse=True)
+        cache = dict(sorted_items[:5000])
+    _save_label_cache(cache)
 
 
 def enrich_eth_address(addr: str) -> Dict:
@@ -42,17 +88,14 @@ def enrich_eth_address(addr: str) -> Dict:
     # 1) Check our verified static table first
     label = EXCHANGE_LABELS_ETH.get(addr_lower, '')
     if not label:
-        # 2) Check live-fetched cache
-        label = _LABEL_CACHE.get(addr_lower, '')
+        # 2) Check persistent file-based cache
+        label = _get_cached_label(addr_lower)
     if not label:
-        # 3) Try live Blockscout lookup (only if not cached as 'Unlabeled')
-        if _LABEL_CACHE.get(addr_lower, '__unknown__') != '__unknown__':
-            label = _fetch_blockscout_label(addr)
-            _LABEL_CACHE[addr_lower] = label or '__unknown__'
-            if not label:
-                label = ''
-        else:
-            label = ''
+        # 3) Try live Blockscout lookup
+        label = _fetch_blockscout_label(addr)
+        if label:
+            _set_cached_label(addr_lower, label)
+        # Don't cache empty results — they'll be re-checked next time
 
     is_exchange = bool(label) and label != 'Unlabeled'
 

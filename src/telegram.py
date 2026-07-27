@@ -26,7 +26,8 @@ from . import supabase as supa
 # CHANNEL FAILURE TRACKER (in-process)
 # =====================================================================
 _channel_failures: Dict[str, int] = {}  # channel_id -> consecutive failure count
-_FAILURE_THRESHOLD = 5  # after this many consecutive failures, disable channel
+from .config import CHANNEL_FAILURE_THRESHOLD
+_FAILURE_THRESHOLD = CHANNEL_FAILURE_THRESHOLD  # 10 (was 5) — more lenient
 
 
 def _record_failure(channel_id: str) -> None:
@@ -44,13 +45,15 @@ def _record_success(channel_id: str) -> None:
 
 
 # =====================================================================
-# SEND TO ALL CHANNELS
+# SEND TO ALL CHANNELS — PARALLEL with rate limiting
 # =====================================================================
 def send_to_all_channels(message: str, photo_path: str = None,
                           inline_buttons: List[List[Dict]] = None,
                           disable_preview: bool = True) -> Dict:
     """
     Send a message (with optional photo) to ALL active channels.
+    Uses ThreadPoolExecutor for parallel sends (Telegram allows 30 msg/sec).
+    With 100 channels, parallel send takes ~5s instead of 100s.
     Returns: {success: int, failed: int, channels: [...]}
     """
     if not TELEGRAM_BOT_TOKEN:
@@ -62,31 +65,61 @@ def send_to_all_channels(message: str, photo_path: str = None,
         log.warning("No active channels configured")
         return {'success': 0, 'failed': 0, 'channels': []}
 
-    log.info(f"Sending to {len(channels)} channel(s)")
+    log.info(f"Sending to {len(channels)} channel(s) in parallel")
 
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
+    # Rate limiter: max 25 sends per second (under Telegram's 30/sec limit)
+    # Uses a simple token bucket
+    rate_lock = threading.Lock()
+    last_send_times = []
+    MAX_PER_SECOND = 25
+
+    def _rate_limited_send(ch):
+        """Send to one channel with rate limiting."""
+        channel_id = ch.get('channel_id') or ch.get('channel_username')
+        if not channel_id:
+            return {'channel': '(no id)', 'success': False}
+
+        # Rate limit: ensure we don't exceed MAX_PER_SECOND in any 1-second window
+        with rate_lock:
+            now = time.time()
+            # Remove entries older than 1 second
+            while last_send_times and last_send_times[0] < now - 1.0:
+                last_send_times.pop(0)
+            if len(last_send_times) >= MAX_PER_SECOND:
+                # Wait until we can send
+                sleep_time = 1.0 - (now - last_send_times[0])
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+            last_send_times.append(time.time())
+
+        ok = _send_to_one_channel(channel_id, message, photo_path, inline_buttons, disable_preview)
+        return {'channel': channel_id, 'success': ok}
+
+    # Parallel send with up to 10 workers
+    # (10 workers × 25/sec rate limit = balanced)
+    max_workers = min(10, len(channels))
     success = 0
     failed = 0
     channel_results = []
 
-    for ch in channels:
-        channel_id = ch.get('channel_id') or ch.get('channel_username')
-        if not channel_id:
-            log.warning(f"Skipping channel with no ID: {ch}")
-            continue
-
-        ok = _send_to_one_channel(channel_id, message, photo_path, inline_buttons, disable_preview)
-        channel_results.append({
-            'channel': channel_id,
-            'success': ok,
-        })
-        if ok:
-            success += 1
-            _record_success(channel_id)
-        else:
-            failed += 1
-            _record_failure(channel_id)
-        # Rate limit between channels
-        time.sleep(TG_SEND_DELAY_SEC)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_rate_limited_send, ch) for ch in channels]
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                channel_results.append(result)
+                if result['success']:
+                    success += 1
+                    _record_success(result['channel'])
+                else:
+                    failed += 1
+                    _record_failure(result['channel'])
+            except Exception as e:
+                log.warning(f"Send error: {e}")
+                failed += 1
 
     log.info(f"Send complete: {success} ok, {failed} failed")
     return {'success': success, 'failed': failed, 'channels': channel_results}

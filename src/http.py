@@ -38,13 +38,24 @@ def fetch_json(url: str, params: dict = None, headers: dict = None,
                 except (json.JSONDecodeError, ValueError) as e:
                     log.warning(f"JSON decode error from {url[:80]}: {e}")
                     return None
-            if resp.status_code in (429, 500, 502, 503, 504):
-                # Exponential backoff with jitter
+            if resp.status_code == 429:
+                # Rate limited — respect Retry-After header if present
+                retry_after = resp.headers.get('Retry-After', '')
+                try:
+                    wait = float(retry_after) if retry_after else (2 ** attempt) + random.uniform(0, 1)
+                except ValueError:
+                    wait = (2 ** attempt) + random.uniform(0, 1)
+                wait = min(wait, 30)  # cap at 30s
+                log.warning(f"HTTP 429 rate limited from {url[:80]} - retry in {wait:.1f}s")
+                time.sleep(wait)
+                continue
+            if resp.status_code in (500, 502, 503, 504):
+                # Server error — exponential backoff with jitter
                 wait = (2 ** attempt) + random.uniform(0, 1)
                 log.warning(f"HTTP {resp.status_code} from {url[:80]} - retry in {wait:.1f}s")
                 time.sleep(wait)
                 continue
-            # 4xx other than 429 - don't retry
+            # 4xx other than 429 - don't retry (client error, won't fix itself)
             log.warning(f"HTTP {resp.status_code} from {url[:80]}: {resp.text[:200]}")
             return None
         except requests.exceptions.Timeout:

@@ -54,6 +54,35 @@ def cleanup_old_cards(max_age_hours: int = 24) -> int:
     return deleted
 
 
+def _alert_admin_critical(error_msg: str) -> None:
+    """Send critical error alert to super-admins via Telegram.
+    Only for truly critical errors (Supabase down, all channels failed, etc.)."""
+    try:
+        from .config import SUPER_ADMIN_IDS, TELEGRAM_BOT_TOKEN
+        import requests
+        if not TELEGRAM_BOT_TOKEN or not SUPER_ADMIN_IDS:
+            return
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        divider = "━" * 25
+        msg = (
+            f"🚨 CRITICAL ERROR\n"
+            f"{divider}\n"
+            f"{error_msg[:500]}\n\n"
+            f"Bot will retry next scheduled run."
+        )
+        for admin_id in SUPER_ADMIN_IDS:
+            try:
+                requests.post(url, data={
+                    'chat_id': admin_id,
+                    'text': msg,
+                    'disable_web_page_preview': True,
+                }, timeout=10)
+            except Exception:
+                pass
+    except Exception:
+        pass  # Never let alerting crash the bot
+
+
 def main():
     log.info("=" * 60)
     log.info("WHALE ALERT BOT v2.1 - Starting scan")
@@ -71,6 +100,11 @@ def main():
             log.info(f"Welcome sent to {result['success']} channel(s)")
         else:
             log.error("Failed to send welcome - will retry next run")
+            _alert_admin_critical(
+                "Failed to send welcome message to ANY channel.\n"
+                "Possible causes: Supabase not configured, bot not admin in channel, "
+                "or Telegram API issues."
+            )
             return 1
         time.sleep(2)
     else:
@@ -81,6 +115,7 @@ def main():
         alerts = run_whale_scan()
     except Exception as e:
         log.exception(f"Scan failed: {e}")
+        _alert_admin_critical(f"Scan failed with error:\n{e}")
         alerts = []
 
     # === Step 3: Post alerts ===

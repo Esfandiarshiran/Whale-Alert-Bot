@@ -6,7 +6,6 @@ Uses file locking to prevent corruption when multiple runs overlap.
 """
 import json
 import os
-import fcntl
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -14,7 +13,6 @@ from .config import CACHE_DIR, log
 
 
 CACHE_FILE = CACHE_DIR / 'whale_state.json'
-LOCK_FILE = CACHE_DIR / 'whale_state.lock'
 DEFAULT_TTL_TXS = 2000      # keep last 2000 tx hashes (renamed: was misleading "TTL")
 DEFAULT_TTL_WALLETS = 5000  # keep last 5000 wallet profiles
 DEFAULT_TTL_ALERT_META = 500  # keep last 500 alert metas for personalization
@@ -62,43 +60,56 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    """Save state with file lock to prevent corruption from concurrent runs."""
+    """Save state. Uses atomic write (temp + rename) to prevent corruption.
+    No fcntl locking — atomic rename is sufficient for our use case.
+    The concurrency group in GitHub Actions prevents overlapping runs."""
     try:
         # Ensure directory exists
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        # Use file lock to prevent concurrent writes
-        with open(LOCK_FILE, 'w') as lock_f:
-            try:
-                fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
-            except (OSError, IOError):
-                pass  # Locking failed (e.g., on some filesystems) — proceed anyway
-            # Atomic write: write to temp, then rename
-            tmp = CACHE_FILE.with_suffix('.tmp')
-            tmp.write_text(json.dumps(data, indent=2, default=str))
-            tmp.replace(CACHE_FILE)
-            try:
-                fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
-            except (OSError, IOError):
-                pass
+        # Atomic write: write to temp, then rename
+        tmp = CACHE_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(data, indent=2, default=str))
+        tmp.replace(CACHE_FILE)
     except Exception as e:
         log.warning(f"Cache save error: {e}")
 
 
 # =====================================================================
-# TX dedup
+# TX dedup — optimized with in-memory set for O(1) lookup
 # =====================================================================
+_posted_txs_set = None  # cached set for fast lookup
+
+
+def _get_posted_txs_set() -> set:
+    """Get posted txs as a set (cached in memory after first load)."""
+    global _posted_txs_set
+    if _posted_txs_set is None:
+        state = _load()
+        _posted_txs_set = set(state.get('posted_txs', []))
+    return _posted_txs_set
+
+
 def is_posted(tx_id: str) -> bool:
-    state = _load()
-    return tx_id in state.get('posted_txs', [])
+    """O(1) lookup using in-memory set."""
+    return tx_id in _get_posted_txs_set()
 
 
 def mark_posted(tx_id: str, alert_type: str = 'btc') -> None:
+    """Mark tx as posted. Updates both in-memory set and file."""
+    global _posted_txs_set
+    posted_set = _get_posted_txs_set()
+    if tx_id in posted_set:
+        return  # already posted
+    posted_set.add(tx_id)
+
     state = _load()
     txs = state.get('posted_txs', [])
-    if tx_id not in txs:
-        txs.append(tx_id)
+    txs.append(tx_id)
+    # Keep last N entries
     if len(txs) > DEFAULT_TTL_TXS:
         txs = txs[-DEFAULT_TTL_TXS:]
+        # Sync the set with trimmed list
+        _posted_txs_set = set(txs)
     state['posted_txs'] = txs
     state['ts'] = datetime.now(timezone.utc).isoformat()
     stats = state.get('stats', {})
