@@ -1,15 +1,5 @@
 name: Whale Alert Bot
 
-# =====================================================================
-# SINGLE WORKFLOW — does both scan + admin poll
-# Runs every 2 minutes during peak, every 10 min off-peak
-# =====================================================================
-# Why 2 min instead of 1 min?
-# - GitHub Actions free tier has limits on workflow runs
-# - 2 min is fast enough for admin commands (user waits max 2 min)
-# - Single workflow avoids cache conflicts between two workflows
-# =====================================================================
-
 on:
   schedule:
     # Peak hours: every 2 min (06:00-21:58 UTC)
@@ -47,7 +37,7 @@ jobs:
           restore-keys: |
             whale-cache-${{ runner.os }}-
 
-      - name: Run admin poll (commands: /help, /test, /addchannel)
+      - name: "Run admin poll"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
@@ -57,7 +47,7 @@ jobs:
         run: |
           python -m src.admin_bot 2>&1 | tee admin_logs.txt || true
 
-      - name: Run whale scan + send alerts
+      - name: "Run whale scan and send alerts"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
