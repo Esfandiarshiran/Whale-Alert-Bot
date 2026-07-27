@@ -1,37 +1,27 @@
-name: Admin Bot Poll (Fast)
+name: Whale Alert Scan
 
 # =====================================================================
-# FAST POLLING — runs every 1 minute during peak hours
-# Processes admin commands (/addchannel, /test, /start spot_, /spot)
-# AND personalization requests (user sends username -> gets card)
-#
-# Why separate from scan workflow?
-# - Personalization needs FAST response (user is waiting in DM)
-# - Scan can run every 10 min (whales don't move every minute)
-# - This keeps admin response time under 1 minute during peak
-#
-# Scheduling:
-# - Peak (06:00-22:00 UTC): every 1 min
-# - Off-peak (22:00-06:00 UTC): every 5 min (less traffic)
-# - Total: ~1100 runs/month (very lightweight, <30s each)
+# SCAN-ONLY WORKFLOW — fetches whale txs and posts alerts
+# Runs every 10 min during peak, every 30 min off-peak
+# Admin commands handled by separate admin_poll.yml (every 1 min)
 # =====================================================================
 
 on:
   schedule:
-    # Peak hours: every minute (06:00-21:59 UTC) — 960 runs/day
-    - cron: '* 6-21 * * *'
-    # Off-peak: every 5 min (22:00-05:59 UTC) — 96 runs/day
-    - cron: '*/5 22-23,0-5 * * *'
+    # Peak hours: every 10 min (06:00-21:50 UTC)
+    - cron: '*/10 6-21 * * *'
+    # Off-peak: every 30 min (22:00-05:50 UTC)
+    - cron: '*/30 22-23,0-5 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: whale-bot-admin-poll
+  group: whale-bot-scan
   cancel-in-progress: false
 
 jobs:
-  admin_poll:
+  whale_scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +43,7 @@ jobs:
           restore-keys: |
             whale-cache-${{ runner.os }}-
 
-      - name: Run admin poll (commands + personalization)
+      - name: Run whale scan + send alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
@@ -61,7 +51,7 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SUPER_ADMIN_IDS: ${{ secrets.SUPER_ADMIN_IDS }}
         run: |
-          python -m src.admin_bot 2>&1 | tee admin_logs.txt
+          python -m src.main 2>&1 | tee main_logs.txt
 
       - name: Save dedup cache
         if: always()
