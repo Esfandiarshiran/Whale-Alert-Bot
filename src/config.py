@@ -51,10 +51,10 @@ CARDS_DIR.mkdir(parents=True, exist_ok=True)
 # =====================================================================
 # THRESHOLDS (minimum USD value to alert)
 # =====================================================================
-MIN_USD_BTC = 1_000_000          # $1M+ BTC transfer
-MIN_USD_ETH = 500_000            # $500K+ ETH transfer
-MIN_USD_STABLE = 1_000_000       # $1M+ stablecoin transfer
-MIN_USD_TOKEN = 500_000          # $500K+ other token transfer
+MIN_USD_BTC = 250_000            # $250K+ BTC transfer (lower = more alerts)
+MIN_USD_ETH = 100_000            # $100K+ ETH transfer
+MIN_USD_STABLE = 250_000         # $250K+ stablecoin transfer
+MIN_USD_TOKEN = 100_000          # $100K+ other token transfer
 
 # Tier thresholds (USD) - for visual badges
 TIER_MEGA_USD    = 50_000_000    # $50M+  -> 🐋 MEGA
