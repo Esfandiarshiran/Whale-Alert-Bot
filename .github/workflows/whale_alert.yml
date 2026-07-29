@@ -33,9 +33,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cache
-          key: whale-cache-${{ runner.os }}-${{ github.sha }}
+          # FIXED: use a FIXED key (not github.sha) so cache persists across commits
+          # restore-keys will find the most recent cache with this prefix
+          key: whale-cache-fixed
           restore-keys: |
-            whale-cache-${{ runner.os }}-
+            whale-cache-
 
       - name: "Run admin poll"
         env:
@@ -62,4 +64,5 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: cache
-          key: whale-cache-${{ runner.os }}-${{ github.sha }}
+          # FIXED: same fixed key so next run can restore it
+          key: whale-cache-fixed
