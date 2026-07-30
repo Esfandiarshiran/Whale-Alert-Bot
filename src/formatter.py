@@ -188,57 +188,57 @@ def format_welcome_message() -> str:
     return "\n".join(lines)
 
 
-def format_daily_summary(stats: dict) -> str:
-    """Daily summary message — clean, organized."""
-    divider = "━" * 30
-    now = datetime.now(timezone.utc)
-    lines = [
-        f"📊 DAILY WHALE DIGEST",
-        divider,
-        f"Period: last 24h (as of {now:%Y-%m-%d %H:%M} UTC)",
-        "",
-    ]
+# def format_daily_summary(stats: dict) -> str:
+#     """Daily summary message — clean, organized."""
+#     divider = "━" * 30
+#     now = datetime.now(timezone.utc)
+#     lines = [
+#         f"📊 DAILY WHALE DIGEST",
+#         divider,
+#         f"Period: last 24h (as of {now:%Y-%m-%d %H:%M} UTC)",
+#         "",
+#     ]
     
-    total_alerts = stats.get('total_alerts', 0)
-    lines.append(f"Total alerts: {total_alerts}")
-    lines.append(f"   BTC: {stats.get('btc_count', 0)}")
-    lines.append(f"   ETH: {stats.get('eth_count', 0)}")
-    lines.append(f"   Stables: {stats.get('stable_count', 0)}")
-    lines.append("")
+#     total_alerts = stats.get('total_alerts', 0)
+#     lines.append(f"Total alerts: {total_alerts}")
+#     lines.append(f"   BTC: {stats.get('btc_count', 0)}")
+#     lines.append(f"   ETH: {stats.get('eth_count', 0)}")
+#     lines.append(f"   Stables: {stats.get('stable_count', 0)}")
+#     lines.append("")
 
-    total_usd = stats.get('total_usd', 0)
-    if total_usd > 0:
-        lines.append(f"Total whale volume: {fmt_usd(total_usd)}")
-        lines.append("")
+#     total_usd = stats.get('total_usd', 0)
+#     if total_usd > 0:
+#         lines.append(f"Total whale volume: {fmt_usd(total_usd)}")
+#         lines.append("")
 
-    net_flow = stats.get('net_flow', 0)
-    if net_flow > 0:
-        lines.append(f"Net exchange INFLOW: +{fmt_usd(abs(net_flow))}")
-        lines.append("   → Potential sell pressure (bearish)")
-        lines.append("")
-    elif net_flow < 0:
-        lines.append(f"Net exchange OUTFLOW: -{fmt_usd(abs(net_flow))}")
-        lines.append("   → Potential accumulation (bullish)")
-        lines.append("")
+#     net_flow = stats.get('net_flow', 0)
+#     if net_flow > 0:
+#         lines.append(f"Net exchange INFLOW: +{fmt_usd(abs(net_flow))}")
+#         lines.append("   → Potential sell pressure (bearish)")
+#         lines.append("")
+#     elif net_flow < 0:
+#         lines.append(f"Net exchange OUTFLOW: -{fmt_usd(abs(net_flow))}")
+#         lines.append("   → Potential accumulation (bullish)")
+#         lines.append("")
 
-    top = stats.get('top_whale')
-    if top:
-        lines.append(f"🏆 TOP WHALE OF THE DAY:")
-        lines.append(f"   {top.get('emoji', '🐋')} {fmt_usd(top.get('value_usd', 0))} {top.get('asset', '')}")
-        if top.get('direction_label'):
-            lines.append(f"   {top.get('direction_label', '')}")
-        if top.get('score'):
-            lines.append(f"   Whale Score: {top.get('score')}/100")
-        lines.append("")
+#     top = stats.get('top_whale')
+#     if top:
+#         lines.append(f"🏆 TOP WHALE OF THE DAY:")
+#         lines.append(f"   {top.get('emoji', '🐋')} {fmt_usd(top.get('value_usd', 0))} {top.get('asset', '')}")
+#         if top.get('direction_label'):
+#             lines.append(f"   {top.get('direction_label', '')}")
+#         if top.get('score'):
+#             lines.append(f"   Whale Score: {top.get('score')}/100")
+#         lines.append("")
 
-    if total_alerts == 0:
-        lines.append("No whale activity met the threshold today.")
-        lines.append("Whale movements are intermittent — this is normal.")
-        lines.append("")
+#     if total_alerts == 0:
+#         lines.append("No whale activity met the threshold today.")
+#         lines.append("Whale movements are intermittent — this is normal.")
+#         lines.append("")
 
-    lines.append(divider)
-    lines.append(FOOTER_TEXT)
-    return "\n".join(lines)
+#     lines.append(divider)
+#     lines.append(FOOTER_TEXT)
+#     return "\n".join(lines)
 
 
 def format_cluster_alert(cluster: dict) -> str:

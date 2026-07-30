@@ -564,80 +564,80 @@ def generate_alert_card(alert: Dict, username: str = None) -> Optional[str]:
 # =====================================================================
 # SUMMARY CARD (daily digest)
 # =====================================================================
-def generate_summary_card(stats: dict) -> Optional[str]:
-    """Generate a magazine-style daily summary card."""
-    if not PIL_AVAILABLE:
-        return None
+# def generate_summary_card(stats: dict) -> Optional[str]:
+#     """Generate a magazine-style daily summary card."""
+#     if not PIL_AVAILABLE:
+#         return None
 
-    try:
-        img = Image.new('RGB', (CARD_W, CARD_H), COLOR_BG)
-        _draw_background(img)
-        draw = ImageDraw.Draw(img)
+#     try:
+#         img = Image.new('RGB', (CARD_W, CARD_H), COLOR_BG)
+#         _draw_background(img)
+#         draw = ImageDraw.Draw(img)
 
-        # Top strip
-        draw.rectangle([0, 0, CARD_W, 80], fill=COLOR_BG_TOP)
-        font_top = _font(34, 'bold')
-        _draw_centered(draw, CARD_W // 2, 22, "📊  DAILY DIGEST", font_top, COLOR_GOLD)
+#         # Top strip
+#         draw.rectangle([0, 0, CARD_W, 80], fill=COLOR_BG_TOP)
+#         font_top = _font(34, 'bold')
+#         _draw_centered(draw, CARD_W // 2, 22, "📊  DAILY DIGEST", font_top, COLOR_GOLD)
 
-        # Date
-        date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        font_date = _font(28, 'reg')
-        _draw_centered(draw, CARD_W // 2, 110, date_str, font_date, COLOR_MUTED)
+#         # Date
+#         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+#         font_date = _font(28, 'reg')
+#         _draw_centered(draw, CARD_W // 2, 110, date_str, font_date, COLOR_MUTED)
 
-        # Big number
-        total = stats.get('total_alerts', 0)
-        font_big = _font(200, 'black')
-        _draw_centered(draw, CARD_W // 2, 160, str(total), font_big, COLOR_WHITE)
+#         # Big number
+#         total = stats.get('total_alerts', 0)
+#         font_big = _font(200, 'black')
+#         _draw_centered(draw, CARD_W // 2, 160, str(total), font_big, COLOR_WHITE)
 
-        font_lbl = _font(32, 'bold')
-        _draw_centered(draw, CARD_W // 2, 380, "WHALE ALERTS TODAY", font_lbl, COLOR_GOLD)
+#         font_lbl = _font(32, 'bold')
+#         _draw_centered(draw, CARD_W // 2, 380, "WHALE ALERTS TODAY", font_lbl, COLOR_GOLD)
 
-        # Breakdown
-        font_stat = _font(38, 'bold')
-        y = 460
-        for label, color in [
-            (f"BTC:  {stats.get('btc_count', 0)}", COLOR_GOLD),
-            (f"ETH:  {stats.get('eth_count', 0)}", COLOR_OFFWHITE),
-            (f"Stables:  {stats.get('stable_count', 0)}", COLOR_BULL),
-        ]:
-            _draw_centered(draw, CARD_W // 2, y, label, font_stat, color)
-            y += 50
+#         # Breakdown
+#         font_stat = _font(38, 'bold')
+#         y = 460
+#         for label, color in [
+#             (f"BTC:  {stats.get('btc_count', 0)}", COLOR_GOLD),
+#             (f"ETH:  {stats.get('eth_count', 0)}", COLOR_OFFWHITE),
+#             (f"Stables:  {stats.get('stable_count', 0)}", COLOR_BULL),
+#         ]:
+#             _draw_centered(draw, CARD_W // 2, y, label, font_stat, color)
+#             y += 50
 
-        # Total volume
-        total_usd = stats.get('total_usd', 0)
-        if total_usd >= 1_000_000_000:
-            vol_text = f"Total volume: ${total_usd/1_000_000_000:.2f}B"
-        elif total_usd >= 1_000_000:
-            vol_text = f"Total volume: ${total_usd/1_000_000:.2f}M"
-        else:
-            vol_text = f"Total volume: ${total_usd:,.0f}"
-        font_vol = _font(30, 'bold')
-        _draw_centered(draw, CARD_W // 2, y + 20, vol_text, font_vol, COLOR_OFFWHITE)
+#         # Total volume
+#         total_usd = stats.get('total_usd', 0)
+#         if total_usd >= 1_000_000_000:
+#             vol_text = f"Total volume: ${total_usd/1_000_000_000:.2f}B"
+#         elif total_usd >= 1_000_000:
+#             vol_text = f"Total volume: ${total_usd/1_000_000:.2f}M"
+#         else:
+#             vol_text = f"Total volume: ${total_usd:,.0f}"
+#         font_vol = _font(30, 'bold')
+#         _draw_centered(draw, CARD_W // 2, y + 20, vol_text, font_vol, COLOR_OFFWHITE)
 
-        # Net flow
-        net_flow = stats.get('net_flow', 0)
-        if net_flow > 0:
-            flow_text = f"↗ Net inflow: +${abs(net_flow)/1_000_000:.2f}M (bearish)"
-            flow_color = COLOR_BEAR
-        elif net_flow < 0:
-            flow_text = f"↘ Net outflow: -${abs(net_flow)/1_000_000:.2f}M (bullish)"
-            flow_color = COLOR_BULL
-        else:
-            flow_text = "Net flow: neutral"
-            flow_color = COLOR_NEUTRAL
-        font_flow = _font(24, 'bold')
-        _draw_centered(draw, CARD_W // 2, y + 70, flow_text, font_flow, flow_color)
+#         # Net flow
+#         net_flow = stats.get('net_flow', 0)
+#         if net_flow > 0:
+#             flow_text = f"↗ Net inflow: +${abs(net_flow)/1_000_000:.2f}M (bearish)"
+#             flow_color = COLOR_BEAR
+#         elif net_flow < 0:
+#             flow_text = f"↘ Net outflow: -${abs(net_flow)/1_000_000:.2f}M (bullish)"
+#             flow_color = COLOR_BULL
+#         else:
+#             flow_text = "Net flow: neutral"
+#             flow_color = COLOR_NEUTRAL
+#         font_flow = _font(24, 'bold')
+#         _draw_centered(draw, CARD_W // 2, y + 70, flow_text, font_flow, flow_color)
 
-        # Footer + social
-        y = _draw_footer_grid(draw, y + 130)
-        _draw_social_row(draw, y + 10)
+#         # Footer + social
+#         y = _draw_footer_grid(draw, y + 130)
+#         _draw_social_row(draw, y + 10)
 
-        out_path = CARDS_DIR / f"summary_{date_str}.png"
-        img.save(out_path, 'PNG', optimize=True)
-        return str(out_path)
-    except Exception as e:
-        log.warning(f"Summary card generation failed: {e}")
-        return None
+#         out_path = CARDS_DIR / f"summary_{date_str}.png"
+#         img.save(out_path, 'PNG', optimize=True)
+#         return str(out_path)
+#     except Exception as e:
+#         log.warning(f"Summary card generation failed: {e}")
+#         return None
 
 
 # =====================================================================

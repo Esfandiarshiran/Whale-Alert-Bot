@@ -135,34 +135,34 @@ def main():
 
     log.info(f"Posted {posted} new alerts")
 
-    # === Step 4: Daily summary ===
-    if should_post_summary(hours=24):
-        log.info("Time for daily summary")
-        stats = get_stats()
-        today_flow = get_today_flow()
+    # # === Step 4: Daily summary ===
+    # if should_post_summary(hours=24):
+    #     log.info("Time for daily summary")
+    #     stats = get_stats()
+    #     today_flow = get_today_flow()
 
-        # Build summary stats
-        summary_stats = {
-            'total_alerts': stats.get('total', 0),
-            'btc_count': stats.get('btc', 0),
-            'eth_count': stats.get('eth', 0),
-            'stable_count': stats.get('stable', 0) + stats.get('token', 0),
-            'total_usd': today_flow.get('exchange_in', 0) + today_flow.get('exchange_out', 0) + today_flow.get('inter_wallet', 0),
-            'net_flow': today_flow.get('exchange_in', 0) - today_flow.get('exchange_out', 0),
-            'top_whale': None,
-        }
+    #     # Build summary stats
+    #     summary_stats = {
+    #         'total_alerts': stats.get('total', 0),
+    #         'btc_count': stats.get('btc', 0),
+    #         'eth_count': stats.get('eth', 0),
+    #         'stable_count': stats.get('stable', 0) + stats.get('token', 0),
+    #         'total_usd': today_flow.get('exchange_in', 0) + today_flow.get('exchange_out', 0) + today_flow.get('inter_wallet', 0),
+    #         'net_flow': today_flow.get('exchange_in', 0) - today_flow.get('exchange_out', 0),
+    #         'top_whale': None,
+    #     }
 
-        summary_msg = format_daily_summary(summary_stats)
-        summary_card = generate_summary_card(summary_stats)
+    #     summary_msg = format_daily_summary(summary_stats)
+    #     summary_card = generate_summary_card(summary_stats)
 
-        send_result = send_to_all_channels(summary_msg, photo_path=summary_card)
-        if send_result['success'] > 0:
-            mark_summary_posted()
-            reset_stats()
-            log.info(f"Daily summary posted to {send_result['success']} channel(s)")
-        else:
-            log.warning("Failed to post daily summary (no channels or all failed)")
-        time.sleep(1)
+    #     send_result = send_to_all_channels(summary_msg, photo_path=summary_card)
+    #     if send_result['success'] > 0:
+    #         mark_summary_posted()
+    #         reset_stats()
+    #         log.info(f"Daily summary posted to {send_result['success']} channel(s)")
+    #     else:
+    #         log.warning("Failed to post daily summary (no channels or all failed)")
+    #     time.sleep(1)
 
     # === Step 5: Weekly Whale of the Week ===
     if should_post_weekly_winner():

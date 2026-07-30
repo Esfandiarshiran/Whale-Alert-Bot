@@ -227,11 +227,11 @@ def record_flow(direction: str, value_usd: float, date_str: str = None) -> None:
     _save(state)
 
 
-def get_today_flow() -> dict:
-    date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    state = _load()
-    flow = state.get('daily_flow', {})
-    return flow.get(date_str, {'exchange_in': 0, 'exchange_out': 0, 'inter_wallet': 0, 'count': 0})
+# def get_today_flow() -> dict:
+#     date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+#     state = _load()
+#     flow = state.get('daily_flow', {})
+#     return flow.get(date_str, {'exchange_in': 0, 'exchange_out': 0, 'inter_wallet': 0, 'count': 0})
 
 
 # =====================================================================
@@ -248,22 +248,22 @@ def mark_initialized() -> None:
     _save(state)
 
 
-def should_post_summary(hours: int = 24) -> bool:
-    state = _load()
-    last = state.get('last_summary')
-    if not last:
-        return True
-    try:
-        last_dt = datetime.fromisoformat(last)
-        return (datetime.now(timezone.utc) - last_dt) >= timedelta(hours=hours)
-    except Exception:
-        return True
+# def should_post_summary(hours: int = 24) -> bool:
+#     state = _load()
+#     last = state.get('last_summary')
+#     if not last:
+#         return True
+#     try:
+#         last_dt = datetime.fromisoformat(last)
+#         return (datetime.now(timezone.utc) - last_dt) >= timedelta(hours=hours)
+#     except Exception:
+#         return True
 
 
-def mark_summary_posted() -> None:
-    state = _load()
-    state['last_summary'] = datetime.now(timezone.utc).isoformat()
-    _save(state)
+# def mark_summary_posted() -> None:
+#     state = _load()
+#     state['last_summary'] = datetime.now(timezone.utc).isoformat()
+#     _save(state)
 
 
 def get_stats() -> dict:
